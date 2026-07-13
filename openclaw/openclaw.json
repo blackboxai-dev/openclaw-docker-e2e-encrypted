@@ -1,0 +1,26 @@
+{
+  "models": {
+    "providers": {
+      "bbenc": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "apiKey": "__BLACKBOX_API_KEY__",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "__ENC_MODEL_ID__",
+            "name": "Confidential Model (encrypted)",
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "bbenc/__ENC_MODEL_ID__"
+      }
+    }
+  }
+}

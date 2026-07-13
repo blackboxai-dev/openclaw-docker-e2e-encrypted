@@ -1,0 +1,6 @@
+.blackbox/
+.blackboxcli/
+.env
+.DS_Store
+__pycache__/
+*.pyc

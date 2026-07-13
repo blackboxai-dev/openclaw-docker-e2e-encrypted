@@ -1,0 +1,49 @@
+# One-command POC: OpenClaw inside Docker, talking to the BLACKBOX AI
+# confidential/encrypted model endpoint through a local decrypting proxy
+# (bb-cc-proxy) that runs side-by-side in the same container.
+#
+# Usage:
+#   cp .env.example .env
+#   # edit .env, set BLACKBOX_API_KEY=sk-...
+#   docker compose build openclaw
+#   docker compose run --rm openclaw                                # runs `openclaw agent`
+#   docker compose run --rm openclaw openclaw agent --message hi    # one-shot
+#   docker compose run --rm openclaw bash                           # debug shell
+
+services:
+  openclaw:
+    build:
+      # Build context is the repo root so the Dockerfile can COPY both
+      # bb-cc-proxy/ and openclaw/ (config, entrypoint).
+      context: .
+      dockerfile: openclaw/Dockerfile
+      args:
+        BB_CC_PROXY_REF: ${BB_CC_PROXY_REF:-main}
+    image: openclaw-enc:latest
+    environment:
+      # Optional default upstream key. Used as a fallback when the client
+      # doesn't send its own Authorization header. Leave empty to force every
+      # request to bring its own key (BYO-key / pass-through mode).
+      BLACKBOX_API_KEY:      ${BLACKBOX_API_KEY:-}
+      # REQUIRED for real use — the org host, e.g. https://acme.blackbox.ai.
+      # The placeholder default WILL fail attestation until you override it.
+      ENC_MODEL_URL:         ${ENC_MODEL_URL:-https://{organisation}.blackbox.ai}
+      ENC_MODEL_ID:          ${ENC_MODEL_ID:-google/gemma-4-31b-it}
+      # 1 = forward the client's Authorization: Bearer header upstream
+      #     (each caller uses their own key). 0 = only use BLACKBOX_API_KEY.
+      PASSTHROUGH_API_KEY:   ${PASSTHROUGH_API_KEY:-1}
+      PROXY_HOST:            0.0.0.0
+      PROXY_PORT:            8080
+    # Expose the proxy on the host for optional curl-from-outside debugging.
+    ports:
+      - "8080:8080"
+    # Interactive so `openclaw agent` chat mode works.
+    stdin_open: true
+    tty: true
+    # Persist the OpenClaw workspace across `docker compose run` invocations
+    # so pairing tokens, session history, and skills survive.
+    volumes:
+      - openclaw-workspace:/root/.openclaw/workspace
+
+volumes:
+  openclaw-workspace:
