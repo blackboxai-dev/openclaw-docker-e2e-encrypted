@@ -22,5 +22,11 @@
         "primary": "bbenc/__ENC_MODEL_ID__"
       }
     }
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "none"
+    }
   }
 }

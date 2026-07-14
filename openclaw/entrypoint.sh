@@ -75,9 +75,14 @@ fi
 
 bb-cc-proxy "${PROXY_ARGS[@]}" &
 PROXY_PID=$!
+GATEWAY_PID=""
 
-# Ensure the proxy dies if the container is stopped.
-trap 'kill "${PROXY_PID}" 2>/dev/null || true' EXIT INT TERM
+# Ensure background children die if the container is stopped.
+cleanup() {
+  [[ -n "${GATEWAY_PID}" ]] && kill "${GATEWAY_PID}" 2>/dev/null || true
+  kill "${PROXY_PID}" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
 # Wait up to ~30s for the proxy's /health to report ok.
 echo -n "[entrypoint] waiting for proxy /health "
@@ -100,6 +105,53 @@ for i in $(seq 1 60); do
     exit 1
   fi
 done
+
+# --- Start OpenClaw Gateway ------------------------------------------------
+# Required for non-`--local` commands (agent, chat, crestodian, cron, ...).
+#
+# Config (openclaw.json) sets gateway.mode=local and gateway.auth.mode=none.
+# Inside a container OpenClaw defaults to bind=auto (0.0.0.0) for port-forward
+# compatibility and REFUSES to start with auth=none + bind=auto. We force
+# --bind loopback so auth=none is safe. Port 18789 is not published to the host
+# by default; see docker-compose.yml if you need host access (which requires
+# switching to a token/password auth mode).
+GATEWAY_LOG="/var/log/openclaw-gateway.log"
+GATEWAY_PORT="${GATEWAY_PORT:-18789}"
+mkdir -p "$(dirname "${GATEWAY_LOG}")"
+echo "[entrypoint] starting openclaw gateway (ws://127.0.0.1:${GATEWAY_PORT})"
+openclaw gateway run --bind loopback >"${GATEWAY_LOG}" 2>&1 &
+GATEWAY_PID=$!
+
+# Wait up to ~15s for the gateway to accept TCP connections on the WS port.
+# `openclaw gateway status` exits 0 even when it can't connect, so we probe
+# the port directly with bash's /dev/tcp (available in bash 3+).
+echo -n "[entrypoint] waiting for gateway "
+GATEWAY_READY=0
+for i in $(seq 1 30); do
+  if (echo > /dev/tcp/127.0.0.1/"${GATEWAY_PORT}") 2>/dev/null; then
+    echo "  ready."
+    GATEWAY_READY=1
+    break
+  fi
+  if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
+    echo
+    echo "[entrypoint] WARNING: gateway exited before becoming ready." >&2
+    echo "[entrypoint] --- last 20 lines of ${GATEWAY_LOG} ---" >&2
+    tail -20 "${GATEWAY_LOG}" >&2 || true
+    echo "[entrypoint] Continuing without gateway; --local commands still work." >&2
+    GATEWAY_PID=""
+    break
+  fi
+  echo -n "."
+  sleep 0.5
+done
+if [[ "${GATEWAY_READY}" -ne 1 && -n "${GATEWAY_PID}" ]]; then
+  echo
+  echo "[entrypoint] WARNING: gateway did not become ready within 15s." >&2
+  echo "[entrypoint] --- last 20 lines of ${GATEWAY_LOG} ---" >&2
+  tail -20 "${GATEWAY_LOG}" >&2 || true
+  echo "[entrypoint] Continuing; check ${GATEWAY_LOG} for details." >&2
+fi
 
 echo "[entrypoint] running: $*"
 exec "$@"

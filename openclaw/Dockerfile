@@ -51,7 +51,11 @@ ENV PROXY_HOST=127.0.0.1 \
     ENC_MODEL_URL=https://{organisation}.blackbox.ai \
     ENC_MODEL_ID=google/gemma-4-31b-it
 
-EXPOSE 8080
+# 8080 = bb-cc-proxy (encrypted OpenAI/Anthropic surface)
+# 18789 = openclaw gateway (WebSocket). Bound to loopback inside the container
+#         and NOT published by default in docker-compose.yml. See compose file
+#         if you need host access (requires binding to 0.0.0.0 and auth).
+EXPOSE 8080 18789
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Default drops you into a shell with the proxy running in the background.
 # From there, run e.g.:
